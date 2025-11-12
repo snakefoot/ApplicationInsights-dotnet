@@ -991,7 +991,10 @@
                         list.Add(new KeyValuePair<string, object>(kvp.Key, kvp.Value));
                     }
 
-                    list.Add(new KeyValuePair<string, object>("{OriginalFormat}", message ?? string.Empty));
+                    if (!properties.ContainsKey("{OriginalFormat}"))
+                    {
+                        list.Add(new KeyValuePair<string, object>("{OriginalFormat}", message ?? string.Empty));
+                    }
                     this.items = list;
                 }
             }
@@ -1037,7 +1040,10 @@
                         list.Add(new KeyValuePair<string, object>(kvp.Key, kvp.Value));
                     }
 
-                    list.Add(new KeyValuePair<string, object>("{OriginalFormat}", message ?? string.Empty));
+                    if (!allProperties.ContainsKey("{OriginalFormat}"))
+                    {
+                        list.Add(new KeyValuePair<string, object>("{OriginalFormat}", message ?? string.Empty));
+                    }
                     this.items = list;
                 }
             }

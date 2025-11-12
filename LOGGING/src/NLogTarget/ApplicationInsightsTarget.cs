@@ -16,6 +16,7 @@ namespace Microsoft.ApplicationInsights.NLogTarget
     using NLog;
     using NLog.Common;
     using NLog.Config;
+    using NLog.Layouts;
     using NLog.Targets;
 
     /// <summary>
@@ -26,6 +27,9 @@ namespace Microsoft.ApplicationInsights.NLogTarget
     public sealed class ApplicationInsightsTarget : TargetWithLayout
     {
         private const string ConnectionStringRequiredMessage = "Azure Monitor connection string is required. Please provide a valid connection string.";
+
+        private static readonly string EmptyTraceIdToHexString = default(System.Diagnostics.ActivityTraceId).ToHexString();
+        private static readonly string EmptySpanIdToHexString = default(System.Diagnostics.ActivitySpanId).ToHexString();
 
         private TelemetryClient telemetryClient;
         private TelemetryConfiguration telemetryConfiguration;
@@ -38,7 +42,6 @@ namespace Microsoft.ApplicationInsights.NLogTarget
         public ApplicationInsightsTarget()
         {
             this.Layout = @"${message}";
-            this.OptimizeBufferReuse = true;
         }
 
         /// <summary>
@@ -55,6 +58,12 @@ namespace Microsoft.ApplicationInsights.NLogTarget
         /// </summary>
         [ArrayParameter(typeof(TargetPropertyWithContext), "contextproperty")]
         public IList<TargetPropertyWithContext> ContextProperties { get; } = new List<TargetPropertyWithContext>();
+
+        /// <inheritdoc cref="TelemetryContext.Operation.Id" />
+        public Layout<System.Diagnostics.ActivityTraceId?> TraceId { get; set; } = Layout<System.Diagnostics.ActivityTraceId?>.FromMethod(static evt => System.Diagnostics.Activity.Current?.TraceId is System.Diagnostics.ActivityTraceId activityTraceId && !ReferenceEquals(EmptyTraceIdToHexString, activityTraceId.ToHexString()) ? activityTraceId : null);
+
+        /// <inheritdoc cref="TelemetryContext.Operation.ParentId" />
+        public Layout<System.Diagnostics.ActivitySpanId?> SpanId { get; set; } = Layout<System.Diagnostics.ActivitySpanId?>.FromMethod(static evt => System.Diagnostics.Activity.Current?.SpanId is System.Diagnostics.ActivitySpanId activitySpanId && !ReferenceEquals(EmptySpanIdToHexString, activitySpanId.ToHexString()) ? activitySpanId : null);
 
         /// <summary>
         /// Gets the logging controller we will be using.
@@ -84,10 +93,10 @@ namespace Microsoft.ApplicationInsights.NLogTarget
                 propertyBag.Add("LoggerName", logEvent.LoggerName);
             }
 
-            if (logEvent.UserStackFrame != null)
+            var messageTemplate = logEvent.Message;
+            if (!ReferenceEquals(messageTemplate, logEvent.FormattedMessage))
             {
-                propertyBag.Add("UserStackFrame", logEvent.UserStackFrame.ToString());
-                propertyBag.Add("UserStackFrameNumber", logEvent.UserStackFrameNumber.ToString(CultureInfo.InvariantCulture));
+                propertyBag.Add("{OriginalFormat}", messageTemplate);
             }
 
             for (int i = 0; i < this.ContextProperties.Count; ++i)
@@ -327,6 +336,18 @@ namespace Microsoft.ApplicationInsights.NLogTarget
             {
                 SeverityLevel = GetSeverityLevel(logEvent.Level),
             };
+
+            var traceId = this.RenderLogEvent(this.TraceId, logEvent);
+            if (traceId.HasValue)
+            {
+                trace.Context.Operation.Id = traceId.Value.ToHexString();
+            }
+
+            var spanId = this.RenderLogEvent(this.SpanId, logEvent);
+            if (traceId.HasValue)
+            {
+                trace.Context.Operation.ParentId = spanId.Value.ToHexString();
+            }
 
             this.BuildPropertyBag(logEvent, trace);
             this.telemetryClient.TrackTrace(trace);
